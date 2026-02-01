@@ -2,8 +2,15 @@ package kafka
 
 import (
 	"context"
+<<<<<<< HEAD
 	"time"
 
+=======
+	"encoding/json"
+	"time"
+
+	"github.com/google/uuid"
+>>>>>>> 92c29d9 (chore: integrate messaging library into main repository)
 	kafkago "github.com/segmentio/kafka-go"
 )
 
@@ -98,3 +105,70 @@ func (p *Producer) PublishBatch(ctx context.Context, messages []*Message) error 
 func (p *Producer) Close() error {
 	return p.writer.Close()
 }
+<<<<<<< HEAD
+=======
+
+// ====================================================================
+// ActivityProducer - Specialized producer for user activity tracking
+// ====================================================================
+
+type UserActivityEvent struct {
+	EventID   string                 `json:"event_id"`
+	EventType string                 `json:"event_type"`
+	UserID    *string                `json:"user_id,omitempty"`
+	SessionID string                 `json:"session_id"`
+	Timestamp time.Time              `json:"timestamp"`
+	Metadata  map[string]interface{} `json:"metadata,omitempty"`
+}
+
+type ActivityProducer struct {
+	producer *Producer
+	topic    string
+}
+
+func NewActivityProducer(brokers []string) *ActivityProducer {
+	writer := &kafkago.Writer{
+		Addr:         kafkago.TCP(brokers...),
+		Topic:        "user-activity",
+		Balancer:     &kafkago.Hash{},
+		BatchSize:    100,
+		BatchTimeout: 10 * time.Millisecond,
+		Async:        true,
+	}
+
+	return &ActivityProducer{
+		producer: &Producer{writer: writer},
+		topic:    "user-activity",
+	}
+}
+
+func (p *ActivityProducer) PublishActivity(ctx context.Context, event *UserActivityEvent) error {
+	// Auto-generate event ID if not provided
+	if event.EventID == "" {
+		event.EventID = uuid.New().String()
+	}
+
+	// Set timestamp if not provided
+	if event.Timestamp.IsZero() {
+		event.Timestamp = time.Now()
+	}
+
+	value, err := json.Marshal(event)
+	if err != nil {
+		return err
+	}
+
+	msg := &Message{
+		Key:       []byte(event.SessionID),
+		Value:     value,
+		Timestamp: event.Timestamp.Unix(),
+		Topic:     p.topic,
+	}
+
+	return p.producer.Publish(ctx, msg)
+}
+
+func (p *ActivityProducer) Close() error {
+	return p.producer.Close()
+}
+>>>>>>> 92c29d9 (chore: integrate messaging library into main repository)
