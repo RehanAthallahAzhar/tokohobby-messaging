@@ -2,15 +2,10 @@ package kafka
 
 import (
 	"context"
-<<<<<<< HEAD
-	"time"
-
-=======
 	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
->>>>>>> 92c29d9 (chore: integrate messaging library into main repository)
 	kafkago "github.com/segmentio/kafka-go"
 )
 
@@ -105,8 +100,6 @@ func (p *Producer) PublishBatch(ctx context.Context, messages []*Message) error 
 func (p *Producer) Close() error {
 	return p.writer.Close()
 }
-<<<<<<< HEAD
-=======
 
 // ====================================================================
 // ActivityProducer - Specialized producer for user activity tracking
@@ -171,4 +164,3 @@ func (p *ActivityProducer) PublishActivity(ctx context.Context, event *UserActiv
 func (p *ActivityProducer) Close() error {
 	return p.producer.Close()
 }
->>>>>>> 92c29d9 (chore: integrate messaging library into main repository)
