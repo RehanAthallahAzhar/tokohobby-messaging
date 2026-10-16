@@ -1,6 +1,6 @@
-.PHONY: all test cover lint build verify fmt clean
+.PHONY: all test cover lint build verify fmt vuln clean
 
-all: fmt verify lint test build
+all: fmt verify lint test vuln build
 
 fmt:
 	gofmt -w -s .
@@ -17,6 +17,9 @@ test:
 cover:
 	go test -race -coverprofile=coverage.out ./...
 	go tool cover -func=coverage.out
+
+vuln:
+	govulncheck ./...
 
 build:
 	go build -v ./...

@@ -2,9 +2,11 @@ module github.com/RehanAthallahAzhar/tokohobby-messaging
 
 go 1.26.0
 
+toolchain go1.26.9
+
 require (
 	github.com/google/uuid v1.6.0
-	github.com/rabbitmq/amqp091-go v1.10.0
+	github.com/rabbitmq/amqp091-go v1.13.0
 	github.com/segmentio/kafka-go v0.4.47
 	go.opentelemetry.io/otel v1.47.0
 )
