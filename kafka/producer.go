@@ -7,6 +7,9 @@ import (
 
 	"github.com/google/uuid"
 	kafkago "github.com/segmentio/kafka-go"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
 )
 
 // Message represents a message (duplicated to avoid import cycle)
@@ -33,7 +36,6 @@ type Producer struct {
 }
 
 // NewProducerFromMessaging creates Kafka producer from messaging config
-// This is called by messaging factory
 func NewProducerFromMessaging(brokers []string, topic string, asyncMode bool, batchSize int) *Producer {
 	writer := &kafkago.Writer{
 		Addr:         kafkago.TCP(brokers...),
@@ -53,6 +55,17 @@ func NewProducer(cfg *ProducerConfig) *Producer {
 }
 
 func (p *Producer) Publish(ctx context.Context, msg *Message) error {
+	ctx, span := otel.Tracer("kafka-producer").Start(ctx, "Kafka.Publish")
+	defer span.End()
+	span.SetAttributes(
+		attribute.String("messaging.system", "kafka"),
+		attribute.String("messaging.destination", msg.Topic),
+	)
+
+	if msg.Headers == nil {
+		msg.Headers = make(map[string]string)
+	}
+	otel.GetTextMapPropagator().Inject(ctx, propagation.MapCarrier(msg.Headers))
 	kafkaMsg := kafkago.Message{
 		Key:   msg.Key,
 		Value: msg.Value,
@@ -107,11 +120,11 @@ func (p *Producer) Close() error {
 
 type UserActivityEvent struct {
 	EventID   string                 `json:"event_id"`
-	EventType string                 `json:"event_type"`
+	EventType string                 `json:"event_type"` // LOGIN, LOGOUT, REGISTER,...
 	UserID    *string                `json:"user_id,omitempty"`
 	SessionID string                 `json:"session_id"`
 	Timestamp time.Time              `json:"timestamp"`
-	Metadata  map[string]interface{} `json:"metadata,omitempty"`
+	Metadata  map[string]interface{} `json:"metadata,omitempty"` // IP, User Agent, Trace ID
 }
 
 type ActivityProducer struct {
@@ -123,10 +136,10 @@ func NewActivityProducer(brokers []string) *ActivityProducer {
 	writer := &kafkago.Writer{
 		Addr:         kafkago.TCP(brokers...),
 		Topic:        "user-activity",
-		Balancer:     &kafkago.Hash{},
+		Balancer:     &kafkago.Hash{}, // Strategi pembagian pesan di Kafka
 		BatchSize:    100,
 		BatchTimeout: 10 * time.Millisecond,
-		Async:        true,
+		Async:        true, // Non-blocking, agar aplikasi tidak ngelag nunggu Kafka
 	}
 
 	return &ActivityProducer{

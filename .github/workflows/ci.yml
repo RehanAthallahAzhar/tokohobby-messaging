@@ -1,0 +1,49 @@
+name: Go CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test & Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: "go.mod"
+          cache: true
+
+      - name: Verify dependencies
+        run: go mod verify
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: Test with race detector and coverage
+        run: go test -v -race -cover ./...
+
+      - name: Build
+        run: go build -v ./...
+
+      - name: Security Scan (govulncheck)
+        uses: golang/govulncheck-action@v1
+        with:
+          go-version-file: "go.mod"
+
+      # Lint runs last: build/test failures are more actionable
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --config=golangci.yml --timeout=5m

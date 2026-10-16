@@ -1,29 +1,31 @@
 package rabbitmq
 
 import (
-	"log"
+	"log/slog"
 )
 
-// setup exchange for user events
+// Direct Exchange untuk User Events
 func SetupUserExchange(rmq *RabbitMQ) error {
 	ch, err := rmq.GetChannel()
 	if err != nil {
 		return err
 	}
+
 	// Declare exchange
 	err = ch.ExchangeDeclare(
 		"user.events", // name
 		"direct",      // type : Tipe routing (direct, topic, fanout, headers)
-		true,          // durable : Ketahanan data (true = exchange akan tetap ada meskipun rabbitmq restart)
+		true,          // durable : Exchange akan tetap ada meskipun rabbitmq restart)
 		false,         // auto-deleted : Antrian akan dihapus jika tidak ada yang menggunakan
-		false,         // internal : Exchange tidak bisa menerima pesan langsung
+		false,         // internal : Exchange tidak dapat menerima pesan secara langsung
 		false,         // no-wait : Exchange akan dibuat tanpa menunggu konfirmasi
 		nil,           // arguments : Argumen tambahan
 	)
 	if err != nil {
 		return err
 	}
-	log.Println("Exchange 'user.events' created")
+
+	slog.Info("Exchange 'user.events' created")
 	return nil
 }
 
@@ -33,6 +35,7 @@ func SetupWelcomeEmailQueue(rmq *RabbitMQ) error {
 	if err != nil {
 		return err
 	}
+
 	// Declare queue
 	_, err = ch.QueueDeclare(
 		"user.welcome.email", // name
@@ -45,6 +48,7 @@ func SetupWelcomeEmailQueue(rmq *RabbitMQ) error {
 	if err != nil {
 		return err
 	}
+
 	// Bind queue to exchange
 	err = ch.QueueBind(
 		"user.welcome.email", // queue name -> [service-name].[purpose].[media]
@@ -56,7 +60,8 @@ func SetupWelcomeEmailQueue(rmq *RabbitMQ) error {
 	if err != nil {
 		return err
 	}
-	log.Println("Queue 'user.welcome.email' created and bound")
+
+	slog.Info("Queue 'user.welcome.email' created and bound")
 	return nil
 }
 
@@ -81,7 +86,7 @@ func SetupOrderExchange(rmq *RabbitMQ) error {
 		return err
 	}
 
-	log.Println("Exchange 'order.events' created (topic)")
+	slog.Info("Exchange 'order.events' created (topic)")
 	return nil
 }
 
@@ -117,7 +122,7 @@ func SetupOrderEmailQueue(rmq *RabbitMQ) error {
 		return err
 	}
 
-	log.Println("Queue 'order.email.notifications' created and bound to order.status.*")
+	slog.Info("Queue 'order.email.notifications' created and bound to order.status.*")
 	return nil
 }
 
@@ -160,7 +165,7 @@ func SetupOrderHistoryQueue(rmq *RabbitMQ) error {
 		}
 	}
 
-	log.Println("Queue 'order.user.history' created with selective bindings")
+	slog.Info("Queue 'order.user.history' created with selective bindings")
 	return nil
 }
 
@@ -201,7 +206,7 @@ func SetupBlogExchange(rmq *RabbitMQ) error {
 		return err
 	}
 
-	log.Println("Exchange 'blog.events' created")
+	slog.Info("Exchange 'blog.events' created")
 	return nil
 }
 
@@ -282,6 +287,6 @@ func SetupBlogNotificationQueue(rmq *RabbitMQ) error {
 		return err
 	}
 
-	log.Println("Blog notification queue created with DLQ, TTL, and Priority")
+	slog.Info("Blog notification queue created with DLQ, TTL, and Priority")
 	return nil
 }

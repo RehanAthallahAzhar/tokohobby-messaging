@@ -81,7 +81,10 @@ func NewProducer(cfg *ProducerConfig) (Producer, error) {
 		return &kafkaProducerAdapter{kafkaProd}, nil
 
 	case "rabbitmq":
-		rmqProd := rabbitmq.NewProducerFromMessaging(cfg.Brokers, cfg.Topic)
+		rmqProd, err := rabbitmq.NewProducerFromMessaging(cfg.Brokers, cfg.Topic)
+		if err != nil {
+			return nil, fmt.Errorf("rabbitmq producer: %w", err)
+		}
 		return &rabbitmqProducerAdapter{rmqProd}, nil
 
 	default:

@@ -2,7 +2,8 @@ package rabbitmq
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
+	"math"
 	"sync"
 	"time"
 
@@ -53,7 +54,8 @@ func (r *RabbitMQ) connect() error {
 	// Create channel
 	r.channel, err = r.conn.Channel()
 	if err != nil {
-		r.conn.Close()
+		// Close connection immediately — no defer needed here
+		_ = r.conn.Close()
 		return fmt.Errorf("failed to open channel: %w", err)
 	}
 
@@ -75,39 +77,44 @@ func (r *RabbitMQ) connect() error {
 		false,                  // global
 	)
 	if err != nil {
-		r.channel.Close()
-		r.conn.Close()
+		_ = r.channel.Close()
+		_ = r.conn.Close()
 		return fmt.Errorf("failed to set QoS: %w", err)
 	}
-	log.Println("Connected to RabbitMQ successfully")
 
-	// Monitor connection close
-	go r.monitorConnection()
+	slog.Info("Connected to RabbitMQ successfully")
+
+	// Monitor connection close — pass a done channel so goroutine can be stopped
+	// on reconnect without leaking
+	go r.monitorConnection(r.closeChan)
 
 	return nil
 }
 
-// monitorConnection monitors if connection is closed
-func (r *RabbitMQ) monitorConnection() {
-	connClose := r.conn.NotifyClose(make(chan *amqp.Error))
+// monitorConnection monitors if connection is closed.
+// It accepts a snapshot of closeChan at the moment it's spawned so that
+// each reconnect cycle gets its own goroutine tied to the right signal.
+func (r *RabbitMQ) monitorConnection(done <-chan struct{}) {
+	connClose := r.conn.NotifyClose(make(chan *amqp.Error, 1))
 
 	select {
-	case err := <-connClose:
-		if err != nil {
-			log.Printf("RabbitMQ connection closed: %v", err)
-			// Trigger reconnect
+	case err, ok := <-connClose:
+		if ok && err != nil {
+			slog.Error("RabbitMQ connection closed unexpectedly", slog.String("error", err.Error()))
+			// Trigger reconnect (non-blocking)
 			select {
 			case r.reconnect <- struct{}{}:
 			default:
 			}
 		}
-	case <-r.closeChan:
+	case <-done:
 		return
 	}
 }
 
-// handleReconnect handles automatic reconnection
+// handleReconnect handles automatic reconnection with exponential backoff.
 func (r *RabbitMQ) handleReconnect() {
+	attempt := 0
 	for {
 		select {
 		case <-r.reconnect:
@@ -117,21 +124,31 @@ func (r *RabbitMQ) handleReconnect() {
 				return
 			}
 			r.mu.RUnlock()
-			log.Println("Attempting to reconnect to RabbitMQ...")
 
-			// Wait before reconnect
-			time.Sleep(r.config.ReconnectDelay)
+			// Exponential backoff: delay = base * 2^attempt, capped at MaxReconnectDelay
+			delay := exponentialBackoff(r.config.ReconnectDelay, r.config.MaxReconnectDelay, attempt)
+			slog.Info("Attempting to reconnect to RabbitMQ...",
+				slog.Int("attempt", attempt+1),
+				slog.Duration("backoff", delay),
+			)
 
-			// Try to reconnect
+			select {
+			case <-time.After(delay):
+			case <-r.closeChan:
+				return
+			}
+
 			if err := r.connect(); err != nil {
-				log.Printf("Reconnect failed: %v", err)
-				// Retry again
+				slog.Error("Reconnect failed", slog.Any("error", err))
+				attempt++
+				// Schedule next retry
 				select {
 				case r.reconnect <- struct{}{}:
 				default:
 				}
 			} else {
-				log.Println("Reconnected to RabbitMQ successfully")
+				slog.Info("Reconnected to RabbitMQ successfully")
+				attempt = 0 // reset backoff counter on success
 			}
 
 		case <-r.closeChan:
@@ -140,7 +157,20 @@ func (r *RabbitMQ) handleReconnect() {
 	}
 }
 
-// GetChannel returns channel for use
+// exponentialBackoff calculates delay = base * 2^attempt, capped at maxDelay.
+func exponentialBackoff(base, maxDelay time.Duration, attempt int) time.Duration {
+	if attempt <= 0 {
+		return base
+	}
+	multiplier := math.Pow(2, float64(attempt))
+	delay := time.Duration(float64(base) * multiplier)
+	if delay > maxDelay || delay < 0 {
+		return maxDelay
+	}
+	return delay
+}
+
+// GetChannel returns channel for use.
 func (r *RabbitMQ) GetChannel() (*amqp.Channel, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -156,21 +186,28 @@ func (r *RabbitMQ) GetChannel() (*amqp.Channel, error) {
 	return r.channel, nil
 }
 
-// Close closes connection gracefully
+// Close closes connection gracefully.
 func (r *RabbitMQ) Close() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
 	if r.closed {
 		return nil
 	}
 	r.closed = true
 	close(r.closeChan)
+
 	if r.channel != nil {
-		r.channel.Close()
+		if closeErr := r.channel.Close(); closeErr != nil {
+			slog.Error("Failed to close RabbitMQ channel", slog.Any("error", closeErr))
+		}
 	}
 	if r.conn != nil {
-		r.conn.Close()
+		if closeErr := r.conn.Close(); closeErr != nil {
+			slog.Error("Failed to close RabbitMQ connection cleanly", slog.Any("error", closeErr))
+		}
 	}
-	log.Println("RabbitMQ connection closed")
+
+	slog.Info("RabbitMQ connection closed")
 	return nil
 }

@@ -20,3 +20,9 @@
 # Logs
 *.log
 /logs/
+
+/docs/
+
+# Test and coverage artifacts
+*.out
+coverage*
